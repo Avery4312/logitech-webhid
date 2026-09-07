@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Logitech C-U0010 WebHID 測試</title>
+  <style>
+    body { font-family: system-ui, "Segoe UI", sans-serif; max-width: 760px; margin: 40px auto; padding: 0 18px; line-height: 1.6; }
+    button { padding: 10px 16px; font-size: 16px; cursor: pointer; }
+    pre { background: #f5f5f5; padding: 14px; border-radius: 8px; overflow: auto; white-space: pre-wrap; }
+    .note { margin: 16px 0; padding: 12px 14px; background: #fafafa; border-left: 4px solid #999; }
+  </style>
+</head>
+<body>
+  <h1>Logitech C-U0010 WebHID 測試</h1>
+  <p>此頁只確認 Chrome / Edge 是否能看到 Logitech USB HID 接收器，不會送出配對指令，也不會修改接收器。</p>
+
+  <div class="note">先插入 C-U0010，再按「搜尋 HID 裝置」。</div>
+
+  <button id="scan">搜尋 HID 裝置</button>
+  <pre id="out">等待操作…</pre>
+
+  <script>
+    const out = document.getElementById('out');
+
+    function fmt(d) {
+      return {
+        productName: d.productName || '(無名稱)',
+        vendorId: '0x' + d.vendorId.toString(16).padStart(4, '0'),
+        productId: '0x' + d.productId.toString(16).padStart(4, '0'),
+        collections: (d.collections || []).map(c => ({
+          usagePage: '0x' + c.usagePage.toString(16),
+          usage: '0x' + c.usage.toString(16)
+        }))
+      };
+    }
+
+    document.getElementById('scan').addEventListener('click', async () => {
+      if (!('hid' in navigator)) {
+        out.textContent = '此瀏覽器不支援 WebHID。請使用最新版 Chrome 或 Edge。';
+        return;
+      }
+
+      try {
+        const devices = await navigator.hid.requestDevice({
+          filters: [{ vendorId: 0x046D }]
+        });
+
+        if (!devices.length) {
+          out.textContent = '沒有選到裝置，或瀏覽器沒有列出 Logitech HID 裝置。';
+          return;
+        }
+
+        out.textContent = JSON.stringify(devices.map(fmt), null, 2);
+      } catch (e) {
+        out.textContent = '錯誤：\n' + (e?.stack || e);
+      }
+    });
+  </script>
+</body>
+</html>
