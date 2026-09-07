@@ -3,150 +3,97 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Logitech C-U0010 WebHID 診斷</title>
+  <title>Logitech C-U0010 / C52F M331 配對</title>
   <style>
-    body { font-family: system-ui, "Segoe UI", sans-serif; max-width: 900px; margin: 36px auto; padding: 0 18px; line-height: 1.6; }
-    button { padding: 10px 14px; font-size: 15px; cursor: pointer; margin: 4px 6px 4px 0; }
-    pre { background: #f5f5f5; padding: 14px; border-radius: 8px; overflow: auto; white-space: pre-wrap; }
-    .note { margin: 16px 0; padding: 12px 14px; background: #fafafa; border-left: 4px solid #999; }
-    .ok { font-weight: 700; }
-    .warn { font-weight: 700; }
+    body{font-family:system-ui,"Segoe UI",sans-serif;max-width:860px;margin:34px auto;padding:0 18px;line-height:1.65}
+    h1{font-size:28px} button{padding:11px 15px;font-size:15px;cursor:pointer;margin:4px 6px 4px 0}
+    button.primary{font-weight:700} button:disabled{opacity:.5;cursor:not-allowed}
+    .box{margin:16px 0;padding:13px 15px;background:#fafafa;border-left:4px solid #999}
+    .status{font-size:18px;font-weight:700;margin:14px 0}.ok{font-weight:700}.warn{font-weight:700}
+    pre{background:#f5f5f5;padding:14px;border-radius:8px;overflow:auto;white-space:pre-wrap;min-height:120px}
+    code{background:#f3f3f3;padding:1px 4px;border-radius:4px}
   </style>
 </head>
 <body>
-  <h1>Logitech C-U0010 / C52F WebHID 診斷</h1>
-  <p>此版本用來確認瀏覽器是否能真正開啟 Logitech USB Receiver 的 HID 介面並讀取描述資訊。它<strong>不會送出配對指令，也不會修改接收器</strong>。</p>
+  <h1>Logitech C-U0010 / C52F 配對 M331</h1>
+  <p>此頁會透過 WebHID 對 <code>046D:C52F</code> Nano Receiver 送出 HID++ 1.0 的 Receiver Pairing 指令，讓接收器進入約 30 秒配對模式。</p>
 
-  <div class="note">
-    目標裝置：Logitech USB Receiver，VID <code>046D</code>，PID <code>C52F</code>。<br>
-    建議使用桌面版 Chrome 或 Edge，並直接從 GitHub Pages 的 HTTPS 網址開啟。
+  <div class="box">
+    <strong>使用方式</strong><br>
+    1. 插入 C-U0010。<br>
+    2. 先把 M331 關閉。<br>
+    3. 按「開始配對 M331」。<br>
+    4. 畫面顯示已進入配對模式後，把 M331 開啟並靠近接收器。<br>
+    5. 等待滑鼠開始移動游標或畫面顯示偵測到新連線。
   </div>
 
   <div id="env"></div>
+  <div class="status" id="status">尚未開始</div>
   <p>
-    <button id="authorized">查看已授權裝置</button>
-    <button id="select">選擇 C52F Receiver</button>
-    <button id="open">開啟選取裝置</button>
+    <button id="pair" class="primary">開始配對 M331</button>
+    <button id="stop">停止配對</button>
+    <button id="select">重新選擇 C52F</button>
     <button id="clear">清除紀錄</button>
   </p>
-
+  <div id="countdown"></div>
   <pre id="out">等待操作…</pre>
 
-  <script>
-    const out = document.getElementById('out');
-    const env = document.getElementById('env');
-    let selected = null;
-
-    const hex = (n, width = 4) => '0x' + Number(n).toString(16).padStart(width, '0');
-
-    function append(msg) {
-      const t = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
-      out.textContent = (out.textContent === '等待操作…' ? '' : out.textContent + '\n') + t;
-    }
-
-    function reportIds(list) {
-      return (list || []).map(r => ({ reportId: r.reportId, items: (r.items || []).length }));
-    }
-
-    function describeCollection(c) {
-      return {
-        usagePage: hex(c.usagePage),
-        usage: hex(c.usage),
-        type: c.type,
-        inputReports: reportIds(c.inputReports),
-        outputReports: reportIds(c.outputReports),
-        featureReports: reportIds(c.featureReports),
-        children: (c.children || []).map(describeCollection)
-      };
-    }
-
-    function describeDevice(d) {
-      return {
-        productName: d.productName || '(無名稱)',
-        vendorId: hex(d.vendorId),
-        productId: hex(d.productId),
-        opened: d.opened,
-        collections: (d.collections || []).map(describeCollection)
-      };
-    }
-
-    function isTarget(d) {
-      return d.vendorId === 0x046D && d.productId === 0xC52F;
-    }
-
-    async function ensureOpen(d) {
-      if (!d) throw new Error('尚未選擇裝置。');
-      if (!d.opened) await d.open();
-      d.addEventListener('inputreport', e => {
-        const bytes = Array.from(new Uint8Array(e.data.buffer));
-        append({
-          event: 'inputreport',
-          reportId: e.reportId,
-          dataHex: bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')
-        });
-      });
-      return d;
-    }
-
-    function showEnvironment() {
-      const hidSupported = 'hid' in navigator;
-      env.innerHTML = `
-        <p>Secure Context：<span class="${window.isSecureContext ? 'ok' : 'warn'}">${window.isSecureContext ? 'YES' : 'NO'}</span><br>
-        WebHID：<span class="${hidSupported ? 'ok' : 'warn'}">${hidSupported ? 'SUPPORTED' : 'NOT SUPPORTED'}</span></p>`;
-    }
-
-    document.getElementById('authorized').addEventListener('click', async () => {
-      if (!('hid' in navigator)) return append('此瀏覽器不支援 WebHID。');
-      try {
-        const devices = await navigator.hid.getDevices();
-        const logi = devices.filter(d => d.vendorId === 0x046D);
-        append({ action: 'getDevices', count: logi.length, devices: logi.map(describeDevice) });
-        const target = logi.find(isTarget);
-        if (target) {
-          selected = target;
-          append('已找到並選取 046D:C52F。');
-        }
-      } catch (e) {
-        append('錯誤：' + (e?.stack || e));
-      }
-    });
-
-    document.getElementById('select').addEventListener('click', async () => {
-      if (!('hid' in navigator)) return append('此瀏覽器不支援 WebHID。');
-      try {
-        const devices = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x046D, productId: 0xC52F }] });
-        if (!devices.length) return append('沒有選到 C52F Receiver。');
-        selected = devices[0];
-        append({ action: 'selected', device: describeDevice(selected) });
-      } catch (e) {
-        append('錯誤：' + (e?.stack || e));
-      }
-    });
-
-    document.getElementById('open').addEventListener('click', async () => {
-      try {
-        if (!selected) {
-          const devices = await navigator.hid.getDevices();
-          selected = devices.find(isTarget) || null;
-        }
-        await ensureOpen(selected);
-        append({ action: 'opened', device: describeDevice(selected) });
-        append('C52F 已成功由瀏覽器開啟。現在可安全進一步分析 HID++，但此頁尚未送出任何配對命令。');
-      } catch (e) {
-        append('開啟失敗：' + (e?.stack || e));
-      }
-    });
-
-    document.getElementById('clear').addEventListener('click', () => {
-      out.textContent = '等待操作…';
-    });
-
-    if ('hid' in navigator) {
-      navigator.hid.addEventListener('connect', e => append({ event: 'connect', device: describeDevice(e.device) }));
-      navigator.hid.addEventListener('disconnect', e => append({ event: 'disconnect', device: describeDevice(e.device) }));
-    }
-
-    showEnvironment();
-  </script>
+<script>
+const VID=0x046D, PID=0xC52F, REPORT_ID=0x10;
+const out=document.getElementById('out'), statusEl=document.getElementById('status'), countdown=document.getElementById('countdown');
+let dev=null, timer=null, remain=0, pairing=false, listenerAttached=false;
+const h=b=>Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join(' ');
+function log(x){const s=typeof x==='string'?x:JSON.stringify(x,null,2);out.textContent=(out.textContent==='等待操作…'?'':out.textContent+'\n')+s;out.scrollTop=out.scrollHeight}
+function setStatus(s){statusEl.textContent=s}
+function target(d){return d.vendorId===VID&&d.productId===PID}
+function vendorSpecific(d){return (d.collections||[]).some(c=>c.usagePage===0xFF00)}
+function hasOutput10(d){return (d.collections||[]).some(c=>((c.outputReports||[]).some(r=>r.reportId===REPORT_ID))||((c.children||[]).some(ch=>(ch.outputReports||[]).some(r=>r.reportId===REPORT_ID))))}
+function choose(ds){const t=ds.filter(target);return t.find(d=>vendorSpecific(d)&&hasOutput10(d))||t.find(d=>vendorSpecific(d))||t[0]||null}
+async function attach(d){if(!d)throw new Error('找不到 046D:C52F。');if(!d.opened)await d.open();dev=d;if(!listenerAttached){dev.addEventListener('inputreport',onReport);listenerAttached=true}return d}
+function onReport(e){const b=Array.from(new Uint8Array(e.data.buffer));log({rxReportId:'0x'+e.reportId.toString(16),data:h(b)});
+  // WebHID data excludes report ID. HID++ short packet starts with device number.
+  if(e.reportId===0x10&&b.length>=4){
+    const devnum=b[0], sub=b[1], addr=b[2];
+    if(sub===0x8F&&b.length>=5){const err=b[4]; if(b[2]===0x80&&b[3]===0xB2){setStatus('接收器拒絕配對指令，錯誤碼 0x'+err.toString(16));}}
+    if(sub===0x41&&devnum!==0xFF){setStatus('偵測到裝置連線，配對可能已成功'); pairing=false; stopClock();}
+    if(devnum===0xFF&&sub===0x80&&addr===0xB2){log('Receiver 已回覆 Pairing Register 指令。');}
+  }
+}
+async function getDevice(interactive=false){
+  let ds=await navigator.hid.getDevices();let d=choose(ds);
+  if(!d&&interactive){ds=await navigator.hid.requestDevice({filters:[{vendorId:VID,productId:PID}]});d=choose(ds)}
+  return d;
+}
+async function sendPairing(open,timeout=30){
+  // Solaar/HID++ 1.0: receiver devnumber FF, write register B2 => request 80B2.
+  // Open lock: action 01, device 00, timeout seconds. Close lock: action 02.
+  const payload=new Uint8Array([0xFF,0x80,0xB2,open?0x01:0x02,0x00,open?timeout:0x00]);
+  log('TX report 0x10: '+h(payload));
+  await dev.sendReport(REPORT_ID,payload);
+}
+function startClock(){stopClock();remain=30;countdown.textContent='剩餘約 30 秒';timer=setInterval(()=>{remain--;countdown.textContent=remain>0?'剩餘約 '+remain+' 秒':'配對時間結束';if(remain<=0){stopClock();pairing=false}},1000)}
+function stopClock(){if(timer){clearInterval(timer);timer=null}}
+async function startPair(){
+  try{
+    if(!('hid' in navigator))throw new Error('此瀏覽器不支援 WebHID，請使用桌面版 Chrome 或 Edge。');
+    setStatus('正在連線 C52F…');
+    let d=await getDevice(false);if(!d)d=await getDevice(true);await attach(d);
+    log({device:d.productName,vendorId:'046d',productId:'c52f',vendorSpecific:vendorSpecific(d),outputReport10:hasOutput10(d)});
+    setStatus('正在開啟 Receiver 配對模式…');
+    await sendPairing(true,30);
+    pairing=true;startClock();
+    setStatus('已送出配對指令：現在把 M331 關閉再開啟');
+    log('請現在把 M331 關閉約 2 秒後再開啟，並放在 C-U0010 附近。');
+  }catch(e){setStatus('配對啟動失敗');log('錯誤：'+(e?.stack||e));}
+}
+async function stopPair(){try{if(!dev){const d=await getDevice(false);if(d)await attach(d)}if(dev)await sendPairing(false,0);pairing=false;stopClock();countdown.textContent='';setStatus('已停止配對模式')}catch(e){log('停止配對失敗：'+(e?.stack||e))}}
+document.getElementById('pair').addEventListener('click',startPair);
+document.getElementById('stop').addEventListener('click',stopPair);
+document.getElementById('select').addEventListener('click',async()=>{try{const ds=await navigator.hid.requestDevice({filters:[{vendorId:VID,productId:PID}]});dev=choose(ds);listenerAttached=false;await attach(dev);setStatus('已選取 C52F');log('已重新選取 '+dev.productName)}catch(e){log('選取失敗：'+(e?.stack||e))}});
+document.getElementById('clear').addEventListener('click',()=>out.textContent='等待操作…');
+const supported='hid' in navigator;
+document.getElementById('env').innerHTML=`Secure Context：<span class="${window.isSecureContext?'ok':'warn'}">${window.isSecureContext?'YES':'NO'}</span>　WebHID：<span class="${supported?'ok':'warn'}">${supported?'SUPPORTED':'NOT SUPPORTED'}</span>`;
+if(supported){navigator.hid.addEventListener('disconnect',e=>{if(dev&&e.device===dev){setStatus('Receiver 已拔除');dev=null;listenerAttached=false;stopClock()}})}
+</script>
 </body>
 </html>
